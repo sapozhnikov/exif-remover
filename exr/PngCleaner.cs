@@ -34,7 +34,7 @@ namespace exr
                 bool skipChunk;
                 chunkLength = ReadDWORD(inputFile);
                 chunkType = ReadDWORD(inputFile);
-                if ((chunkType == 0x69545874) /* iXTt */ ||
+                if ((chunkType == 0x69545874) /* iTXt */ ||
                     (chunkType == 0x74455874) /* tEXt */ ||
                     (chunkType == 0x7a545874) /* zTXt */ ||
                     (chunkType == 0x74494d45) /* tIME */
