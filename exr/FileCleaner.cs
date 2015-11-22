@@ -1,12 +1,12 @@
 ﻿using System;
 using System.Collections.Generic;
-//using System.Linq;
+using System.Linq;
 using System.Text;
 using System.IO;
 
 namespace exr
 {
-    enum ErrorCode : int
+    enum ErrorCode
     {
         NoError = 0,
         Unknown = -1,
@@ -15,10 +15,12 @@ namespace exr
         FileCorrupt = -4
     }
 
-    static class FileCleaner
+    static partial class FileCleaner
     {
         public static void ProcessFile(String fileName)
         {
+            string[] validExtensions = { ".jpg", ".jpeg", ".png" };
+
             FileInfo fileInfo;
 
             try
@@ -31,7 +33,7 @@ namespace exr
                 return;
             }
 
-            if ((fileInfo.Extension.ToLower() != ".jpg") && (fileInfo.Extension.ToLower() != ".jpeg"))
+            if (string.IsNullOrEmpty(validExtensions.FirstOrDefault(x => x == fileInfo.Extension.ToLower())))
             {
                 System.Console.WriteLine(String.Format("{0} - wrong file extension", fileName));
                 return;
@@ -71,7 +73,7 @@ namespace exr
                 return ErrorCode.NoAccess;
             }
 
-            long inputFileLength = fileInfo.Length;
+            //long inputFileLength = fileInfo.Length;
 
             String outputFileName = fileInfo.Name.Substring(0, fileInfo.Name.Length - fileInfo.Extension.Length) + ".new";
             FileStream outputFile;
@@ -85,111 +87,52 @@ namespace exr
                 return ErrorCode.NoAccess;
             }
 
-            int markerHead;
-            int inputByte = inputFile.ReadByte();
-            markerHead = inputByte;
-            inputByte = inputFile.ReadByte();
-            markerHead = (markerHead << 8) + inputByte;
-
-            if (markerHead != 0xFFD8)
+            try
             {
-                System.Console.WriteLine("Missed SOI marker");
-                return ErrorCode.FileCorrupt;
+                ErrorCode result;
+                switch (fileInfo.Extension.ToLower())
+                {
+                    case ".jpg":
+                    case ".jpeg":
+                        result = JpegCleaner(inputFile, outputFile);
+                        break;
+                    case ".png":
+                        result = PngCleaner(inputFile, outputFile);
+                        break;
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Console.WriteLine(String.Format("Error: {0}", ex.Message));
+                return ErrorCode.Unknown;
+            }
+            finally
+            {
+                outputFile.Flush();
+                outputFile.Close();
+                inputFile.Close();
             }
 
-            outputFile.WriteByte(0xFF);
-            outputFile.WriteByte(0xD8);
-
-            int blockLength;
-            do
+            try
             {
-                inputByte = inputFile.ReadByte();
-                //block header must be 0xFFXX
-                if (inputByte != 0xFF)
-                {
-                    return ErrorCode.FileCorrupt;
-                }
-                markerHead = inputByte;
-                inputByte = inputFile.ReadByte();
-                if (inputByte < 0)
-                    return ErrorCode.FileCorrupt;
-                markerHead = (markerHead << 8) + inputByte;
-
-                if (markerHead == 0xFFD9) //EOI marker
-                {
-                    break;
-                }
-
-                inputByte = inputFile.ReadByte();
-                blockLength = inputByte;
-                inputByte = inputFile.ReadByte();
-                blockLength = (blockLength << 8) + inputByte;
-
-                //System.Console.WriteLine(String.Format("Block {0:X} length {1} position {2:X}", markerHead, blockLength, inputFile.Position - 4));
-
-                if (
-                    ((markerHead >= 0xFFE0) && (markerHead <= 0xFFEF)) || //application segments
-                    (markerHead == 0xFFFE) // JPEG comment
-                    )
-                {
-                    //skip unnesessary data
-                    for (int i = 0; (i < blockLength - 2) && (inputByte >= 0); i++)
-                    {
-                        inputByte = inputFile.ReadByte();
-                    }
-                    continue;
-                }
-
-                outputFile.WriteByte((byte)(markerHead >> 8));
-                outputFile.WriteByte((byte)(markerHead & 0xFF));
-                outputFile.WriteByte((byte)(blockLength >> 8));
-                outputFile.WriteByte((byte)(blockLength & 0xFF));
-
-                for (int i = 0; (i < blockLength - 2) && (inputByte >= 0); i++)
-                {
-                    inputByte = inputFile.ReadByte();
-                    outputFile.WriteByte((byte)inputByte);
-                }
-
-                if (markerHead == 0xFFDA) //SOS marker
-                {
-                    //begin of the image stream
-                    inputByte = inputFile.ReadByte();
-                    while (inputByte >= 0)
-                    {
-                        outputFile.WriteByte((byte)inputByte);
-                        inputByte = inputFile.ReadByte();
-                    }
-
-                    outputFile.Flush();
-                    outputFile.Close();
-                    inputFile.Close();
-                    try
-                    {
-                        System.IO.File.Delete(inputFile.Name);
-                    }
-                    catch (Exception ex)
-                    {
-                        System.Console.WriteLine(String.Format("Can't delete file '{0}'. Reason: {1}", inputFile.Name, ex.Message));
-                        return ErrorCode.NoAccess;
-                    }
-
-                    try
-                    {
-                        System.IO.File.Move(outputFile.Name, inputFile.Name);
-                    }
-                    catch (Exception ex)
-                    {
-                        System.Console.WriteLine(String.Format("Can't rename file '{0}'. Reason: {1}", outputFile.Name, ex.Message));
-                        return ErrorCode.NoAccess;
-                    }
-                    //outputFile.Dispose();
-                    //inputFile.Dispose();
-                    return ErrorCode.NoError;
-                }
-
+                System.IO.File.Delete(inputFile.Name);
             }
-            while (true);
+            catch (Exception ex)
+            {
+                System.Console.WriteLine(String.Format("Can't delete file '{0}'. Reason: {1}", inputFile.Name, ex.Message));
+                return ErrorCode.NoAccess;
+            }
+
+            try
+            {
+                System.IO.File.Move(outputFile.Name, inputFile.Name);
+            }
+            catch (Exception ex)
+            {
+                System.Console.WriteLine(String.Format("Can't rename file '{0}'. Reason: {1}", outputFile.Name, ex.Message));
+                return ErrorCode.NoAccess;
+            }
+
 
             return 0;
         }
